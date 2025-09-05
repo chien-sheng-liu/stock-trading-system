@@ -1,164 +1,168 @@
 import pandas as pd
 import numpy as np
-from data_fetcher import fetch_data, get_ticker_info, fetch_tw_stock_list
+from data_fetcher import fetch_data, get_ticker_info
 from strategy import add_indicators
 from datetime import datetime, timedelta
 
-
-def find_candidates(tickers):
+class Recommender:
     """
-    Finds day trading candidates from a list of tickers based on a set of rules.
-    Rules:
-    1. High volume: Volume > 1.5 * 20-day average volume
-    2. High volatility: ATR(14) > 2% of the closing price
-    3. Recent price movement: Price change in last 5 days > 3%
+    A class to find trading candidates and generate recommendations.
     """
-    candidates = []
-    print(f"正在分析 {len(tickers)} 支股票...")
+    def __init__(self, tickers):
+        self.tickers = tickers
+        self.data = self._fetch_market_data()
 
-    try:
-        data = fetch_data(
-            tickers,
+    def _fetch_market_data(self):
+        """Fetches historical data for the given tickers."""
+        print(f"Fetching data for {len(self.tickers)} tickers...")
+        return fetch_data(
+            self.tickers,
             start_date=(datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d'),
             end_date=datetime.now().strftime('%Y-%m-%d'),
             interval="1d"
         )
 
-        for ticker in tickers:
-            if ticker not in data:
-                print(f"⚠️  {ticker}: 無法獲取數據")
+    def _check_volume(self, df):
+        """Rule 1: Check for abnormal volume."""
+        if len(df) < 20:
+            return 0, None
+        avg_volume_20d = df['Volume'].tail(20).mean()
+        current_volume = df['Volume'].iloc[-1]
+        if pd.notna(current_volume) and pd.notna(avg_volume_20d) and avg_volume_20d > 0:
+            volume_ratio = float(current_volume) / float(avg_volume_20d)
+            if volume_ratio > 1.5:
+                return 1, f"成交量異常 ({volume_ratio:.1f}x)"
+        return 0, None
+
+    def _check_volatility(self, df):
+        """Rule 2: Check for high volatility."""
+        if 'ATR' in df.columns and pd.notna(df['ATR'].iloc[-1]):
+            atr = float(df['ATR'].iloc[-1])
+            close_price = float(df['Close'].iloc[-1])
+            if close_price > 0:
+                volatility_ratio = atr / close_price
+                if volatility_ratio > 0.02:
+                    return 1, f"高波動率 ({volatility_ratio:.1%})"
+        return 0, None
+
+    def _check_price_movement(self, df):
+        """Rule 3: Check for recent price movement."""
+        if len(df) < 6:
+            return 0, None
+        price_5_days_ago = float(df['Close'].iloc[-6])
+        current_price = float(df['Close'].iloc[-1])
+        if price_5_days_ago > 0:
+            price_change_pct = abs((current_price - price_5_days_ago) / price_5_days_ago)
+            if price_change_pct > 0.03:
+                return 1, f"價格大幅變動 ({price_change_pct:.1%})"
+        return 0, None
+
+    def _check_rsi(self, df):
+        """Rule 4: Check RSI."""
+        if 'RSI' in df.columns and pd.notna(df['RSI'].iloc[-1]):
+            rsi = float(df['RSI'].iloc[-1])
+            if 30 < rsi < 70:
+                return 0.5, f"RSI健康 ({rsi:.1f})"
+        return 0, None
+
+    def find_candidates(self):
+        """
+        Finds day trading candidates from a list of tickers based on a set of rules.
+        """
+        candidates = []
+        print(f"Analyzing {len(self.tickers)} stocks...")
+
+        for ticker in self.tickers:
+            if ticker not in self.data:
+                print(f"⚠️  {ticker}: Could not get data")
                 continue
 
-            df = data[ticker]
+            df = self.data[ticker]
             if df is None or df.empty or len(df) < 25:
-                print(f"⚠️  {ticker}: 數據不足或為空 ({len(df) if df is not None else 0} 天)")
+                print(f"⚠️  {ticker}: Not enough data ({len(df) if df is not None else 0} days)")
                 continue
 
             try:
                 df = add_indicators(df)
 
                 if df[['Close', 'Volume', 'High', 'Low']].isnull().values.any():
-                    print(f"⚠️  {ticker}: 數據包含缺失值")
+                    print(f"⚠️  {ticker}: Data contains NaN values")
                     continue
 
                 score = 0
                 criteria = []
 
-                # Rule 1: 成交量異常
-                try:
-                    if len(df) >= 20:
-                        avg_volume_20d = df['Volume'].tail(20).mean()
-                        current_volume = df['Volume'].iloc[-1]
-                        if pd.notna(current_volume) and pd.notna(avg_volume_20d) and avg_volume_20d > 0:
-                            volume_ratio = float(current_volume) / float(avg_volume_20d)
-                            if volume_ratio > 1.5:
-                                score += 1
-                                criteria.append(f"成交量異常 ({volume_ratio:.1f}x)")
-                except Exception as e:
-                    print(f"⚠️  {ticker}: 成交量分析錯誤 - {e}")
+                rules = [
+                    self._check_volume,
+                    self._check_volatility,
+                    self._check_price_movement,
+                    self._check_rsi
+                ]
 
-                # Rule 2: 波動率
-                try:
-                    if 'ATR' in df.columns and pd.notna(df['ATR'].iloc[-1]):
-                        atr = float(df['ATR'].iloc[-1])
-                        close_price = float(df['Close'].iloc[-1])
-                        if close_price > 0:
-                            volatility_ratio = atr / close_price
-                            if volatility_ratio > 0.02:
-                                score += 1
-                                criteria.append(f"高波動率 ({volatility_ratio:.1%})")
-                except Exception as e:
-                    print(f"⚠️  {ticker}: 波動率分析錯誤 - {e}")
+                for rule in rules:
+                    try:
+                        rule_score, criterion = rule(df)
+                        if criterion:
+                            score += rule_score
+                            criteria.append(criterion)
+                    except Exception as e:
+                        print(f"⚠️  {ticker}: Error in rule {rule.__name__} - {e}")
 
-                # Rule 3: 價格變動
-                try:
-                    if len(df) >= 6:
-                        price_5_days_ago = float(df['Close'].iloc[-6])
-                        current_price = float(df['Close'].iloc[-1])
-                        if price_5_days_ago > 0:
-                            price_change_pct = abs((current_price - price_5_days_ago) / price_5_days_ago)
-                            if price_change_pct > 0.03:
-                                score += 1
-                                criteria.append(f"價格大幅變動 ({price_change_pct:.1%})")
-                except Exception as e:
-                    print(f"⚠️  {ticker}: 價格變動分析錯誤 - {e}")
-
-                # Rule 4: RSI 檢查
-                try:
-                    if 'RSI' in df.columns and pd.notna(df['RSI'].iloc[-1]):
-                        rsi = float(df['RSI'].iloc[-1])
-                        if 30 < rsi < 70:
-                            score += 0.5
-                            criteria.append(f"RSI健康 ({rsi:.1f})")
-                except Exception as e:
-                    print(f"⚠️  {ticker}: RSI分析錯誤 - {e}")
-
-                print(f"📊 {ticker}: 得分 {score:.1f}/3.5 - {criteria}")
+                print(f"📊 {ticker}: Score {score:.1f}/3.5 - {criteria}")
 
                 if score >= 1.0:
                     candidates.append(ticker)
-                    print(f"✅ {ticker}: 入選候選名單")
+                    print(f"✅ {ticker}: Added to candidate list")
                 else:
-                    print(f"❌ {ticker}: 不符合條件 (得分不足)")
+                    print(f"❌ {ticker}: Does not meet criteria (score too low)")
 
             except Exception as e:
-                print(f"❌ {ticker}: 整體分析錯誤 - {str(e)}")
+                print(f"❌ {ticker}: Error during analysis - {str(e)}")
                 import traceback; traceback.print_exc()
                 continue
+        
+        print(f"Found {len(candidates)} candidates: {candidates}")
+        return candidates
 
-    except Exception as e:
-        print(f"整體分析錯誤: {str(e)}")
-        import traceback; traceback.print_exc()
+    def generate_recommendations(self, candidates):
+        """
+        Generates entry and exit recommendations for a list of candidate stocks.
+        """
+        if not candidates:
+            print("No candidates, returning empty recommendations.")
+            return []
 
-    print(f"找到 {len(candidates)} 支候選股票: {candidates}")
-    return candidates
+        recommendations = []
+        print(f"Generating recommendations for {len(candidates)} stocks...")
 
-def generate_recommendations(candidates):
-    """
-    Generates entry and exit recommendations for a list of candidate stocks.
-    """
-    if not candidates:
-        print("沒有候選股票，直接返回空推薦")
-        return []
-
-    all_stocks_with_names = fetch_tw_stock_list()
-    name_map = {stock['ticker']: stock['name'] for stock in all_stocks_with_names}
-
-    recommendations = []
-    print(f"正在生成 {len(candidates)} 支股票的推薦...")
-
-    try:
-        data = fetch_data(candidates, period="10d", interval="1d")
+        # Fetch more detailed data if needed, or use existing data
+        # For this example, we'll re-fetch 10 days of data for simplicity
+        detailed_data = fetch_data(candidates, period="10d", interval="1d")
 
         for ticker in candidates:
-            if ticker not in data:
-                print(f"⚠️  {ticker}: 無法獲取詳細數據")
+            if ticker not in detailed_data:
+                print(f"⚠️  {ticker}: Could not get detailed data")
                 continue
 
-            df = data[ticker]
+            df = detailed_data[ticker]
             if df is None or df.empty:
-                print(f"⚠️  {ticker}: 詳細數據為空")
+                print(f"⚠️  {ticker}: Detailed data is empty")
                 continue
 
             try:
                 latest_price = float(df['Close'].iloc[-1])
-
                 recent_data = df.tail(min(10, len(df)))
-
                 support = float(recent_data['Low'].min())
                 resistance = float(recent_data['High'].max())
-
                 price_range = resistance - support
 
                 if price_range <= 0:
-                    print(f"⚠️  {ticker}: 價格區間無效")
+                    print(f"⚠️  {ticker}: Invalid price range")
                     continue
 
                 entry_low = support
                 entry_high = support + (price_range * 0.4)
-
                 target_price = resistance - (price_range * 0.1)
-
                 stop_loss = support - (price_range * 0.15)
 
                 if stop_loss < latest_price * 0.85:
@@ -177,7 +181,8 @@ def generate_recommendations(candidates):
                 else:
                     rating = "不推薦"
 
-                stock_name = name_map.get(ticker, ticker)
+                info = get_ticker_info(ticker)
+                stock_name = info.get('name', ticker) if info else ticker
 
                 recommendation = {
                     "ticker": ticker,
@@ -192,46 +197,59 @@ def generate_recommendations(candidates):
                     "rating": rating,
                     "potential_return": f"{((target_price - entry_high) / entry_high * 100):.1f}%"
                 }
-
                 recommendations.append(recommendation)
-                print(f"✅ {ticker}: 推薦已生成 ({rating})")
+                print(f"✅ {ticker}: Recommendation generated ({rating})")
 
             except Exception as e:
-                print(f"❌ {ticker}: 推薦生成錯誤 - {str(e)}")
-                import traceback
-                traceback.print_exc()
+                print(f"❌ {ticker}: Error generating recommendation - {str(e)}")
+                import traceback; traceback.print_exc()
                 continue
+        
+        print(f"Successfully generated {len(recommendations)} recommendations.")
+        return recommendations
 
-    except Exception as e:
-        print(f"推薦生成整體錯誤: {str(e)}")
-        import traceback
-        traceback.print_exc()
+
+def find_candidates(tickers):
+    """Legacy function wrapper for compatibility."""
+    recommender = Recommender(tickers)
+    return recommender.find_candidates()
+
+def generate_recommendations(candidates):
+    """Legacy function wrapper for compatibility."""
+    # This assumes the initial tickers for the recommender are not needed here.
+    # A better approach would be to pass the recommender object or handle this differently.
+    # For now, we create a dummy recommender.
+    if not candidates:
+        return []
+    recommender = Recommender(candidates) # Re-initializes with candidates
+    return recommender.generate_recommendations(candidates)
 
 
 if __name__ == '__main__':
-    # 測試用例
-    test_tickers = ["2330.TW", "2317.TW", "0050.TW"]  # 台積電、鴻海、0050
-    print("開始測試推薦系統...")
+    # Test case
+    test_tickers = ["2330.TW", "2317.TW", "0050.TW"]  # TSMC, Hon Hai, 0050
+    print("Starting recommendation system test...")
 
-    candidates = find_candidates(test_tickers)
+    recommender = Recommender(test_tickers)
+    candidates = recommender.find_candidates()
 
     if candidates:
-        recommendations = generate_recommendations(candidates)
+        recommendations = recommender.generate_recommendations(candidates)
 
-        print("\n" + "=" * 50)
-        print("📈 日內交易推薦")
+        print("" + "=" * 50)
+        print("📈 Day Trading Recommendations")
         print("=" * 50)
 
         for r in recommendations:
-            print(f"\n🏷️  股票代碼: {r['ticker']}")
-            print(f"💰 目前價格: {r['current_price']}")
-            print(f"📥 建議進場區間: {r['entry_price_range']}")
-            print(f"🎯 目標價位: {r['target_profit']}")
-            print(f"⛔ 停損點: {r['stop_loss']}")
-            print(f"⚖️  風險收益比: {r['risk_reward_ratio']}")
-            print(f"📊 支撐位: {r['support']}")
-            print(f"📈 阻力位: {r['resistance']}")
-            print(f"⭐ 推薦等級: {r['rating']}")
-            print(f"💹 潛在報酬: {r['potential_return']}")
+            print(f"🏷️  Ticker: {r['ticker']}")
+            print(f"💰 Current Price: {r['current_price']}")
+            print(f"📥 Suggested Entry: {r['entry_price_range']}")
+            print(f"🎯 Target Price: {r['target_profit']}")
+            print(f"⛔ Stop Loss: {r['stop_loss']}")
+            print(f"⚖️  Risk/Reward Ratio: {r['risk_reward_ratio']}")
+            print(f"📊 Support: {r['support']}")
+            print(f"📈 Resistance: {r['resistance']}")
+            print(f"⭐ Rating: {r['rating']}")
+            print(f"💹 Potential Return: {r['potential_return']}")
     else:
-        print("❌ 沒有找到符合條件的候選股票")
+        print("❌ No suitable candidates found.")

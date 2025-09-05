@@ -4,4 +4,4 @@ yfinance
 pandas
 numpy
 requests
-lxml
+psycopg2-binary

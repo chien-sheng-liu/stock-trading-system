@@ -1,24 +1,89 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-// 固定產業清單（和後端 industries.py 對應）
-const INDUSTRIES = [
-  "半導體業",
-  "電腦及週邊設備業",
-  "金融業",
-  "通信網路業",
-  "生技醫療業",
-  "汽車業",
-  "塑膠工業",
-  "水泥工業"
-];
+// Custom Select Component for better UI/UX
+const CustomSelect = ({ options, value, onChange, placeholder, disabled }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectRef = useRef(null);
+
+  const displayValue = value || placeholder;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (selectRef.current && !selectRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handleOptionClick = (option) => {
+    onChange(option);
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={selectRef}>
+      <button
+        type="button"
+        className="mt-1 block w-full bg-secondary border border-border rounded-md shadow-sm py-2 px-3 text-left cursor-default focus:outline-none focus:ring-primary focus:border-primary sm:text-sm text-white flex justify-between items-center"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+      >
+        {displayValue}
+        {/* Arrow icon */}
+        <svg className={`w-5 h-5 text-gray-400 transform ${isOpen ? '-rotate-180' : 'rotate-0'} transition-transform duration-200`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+      </button>
+
+      {isOpen && (
+        <ul className="absolute z-10 mt-1 w-full bg-secondary shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
+          {options.length > 0 ? (
+            options.map((option) => (
+              <li
+                key={option}
+                className="text-gray-300 cursor-default select-none relative py-2 pl-3 pr-9 hover:bg-primary hover:text-primary-foreground"
+                onClick={() => handleOptionClick(option)}
+              >
+                {option}
+              </li>
+            ))
+          ) : (
+            <li className="text-gray-500 py-2 pl-3 pr-9">沒有選項</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+};
 
 export default function RecommendationForm({ onResults }) {
   const [ticker, setTicker] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingIndustry, setLoadingIndustry] = useState('');
   const [error, setError] = useState(null);
+  const [industries, setIndustries] = useState([]);
+  const [selectedIndustry, setSelectedIndustry] = useState('');
+
+  // Fetch industries on component mount
+  useEffect(() => {
+    const fetchIndustries = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/industries');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        setIndustries(data.industries || []);
+      } catch (e) {
+        console.error("Failed to fetch industries:", e);
+        // Optionally set an error state to display to the user
+      }
+    };
+    fetchIndustries();
+  }, []);
 
   // 手動推薦
   const handleSubmit = async (e) => {
@@ -26,10 +91,10 @@ export default function RecommendationForm({ onResults }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/recommend/all', {
+      const response = await fetch('http://127.0.0.1:5000/api/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: "manual", ticker }),
+        body: JSON.stringify({ ticker }),
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
@@ -61,23 +126,27 @@ export default function RecommendationForm({ onResults }) {
     }
   };
 
+  // Handle industry selection from dropdown
+  const handleIndustryChange = (industry) => {
+    setSelectedIndustry(industry);
+    if (industry) {
+      handleIndustryRecommend(industry);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* 固定產業推薦 */}
+      {/* 依產業推薦 (Custom Dropdown) */}
       <div>
         <h3 className="text-md font-semibold text-foreground mb-2">依產業推薦</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          {INDUSTRIES.map((industry) => (
-            <button
-              key={industry}
-              onClick={() => handleIndustryRecommend(industry)}
-              disabled={loadingIndustry === industry}
-              className="py-2 px-3 text-sm rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
-            >
-              {loadingIndustry === industry ? `分析中...` : industry}
-            </button>
-          ))}
-        </div>
+        <CustomSelect
+          options={industries}
+          value={selectedIndustry}
+          onChange={handleIndustryChange}
+          placeholder="請選擇產業"
+          disabled={loadingIndustry !== ''}
+        />
+        {loadingIndustry && <p className="text-sm text-gray-400 mt-2">分析中: {loadingIndustry}...</p>}
       </div>
 
       {/* 分隔線 */}

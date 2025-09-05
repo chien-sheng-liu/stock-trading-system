@@ -1,43 +1,53 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import traceback
-from typing import Optional
-
-from recommender import generate_recommendations
+from recommender import Recommender  # Import the class
 from data_fetcher import get_stocks_by_industry
 
 router = APIRouter()
 
 class AutoRecommendRequest(BaseModel):
-    industry: Optional[str] = None
+    industry: str
 
 @router.post("/recommend/auto")
-def auto_recommend(request: AutoRecommendRequest = Body(...)):
-    """
-    按產業推薦股票，為產業內所有股票生成評級。
-    """
+def auto_recommend(request: AutoRecommendRequest):
     try:
-        if not request or not request.industry:
-            raise HTTPException(status_code=400, detail="Industry is required.")
+        print(f"Received auto-recommend request for industry: {request.industry}")
+        tickers = get_stocks_by_industry(request.industry)
+        if not tickers:
+            print(f"No tickers found for industry: {request.industry}")
+            return {
+                "type": "recommendation",
+                "recommendations": [],
+                "message": f"無法為產業 '{request.industry}' 找到任何股票。"
+            }
 
-        industry = request.industry
-        print(f"為「{industry}」產業內所有股票生成推薦...")
+        print(f"Found {len(tickers)} tickers for {request.industry}. Initializing recommender...")
         
-        stocks_in_industry = get_stocks_by_industry(industry)
-        if not stocks_in_industry:
-            raise HTTPException(status_code=404, detail=f"找不到該產業的股票: {industry}")
+        # Use the new Recommender class
+        recommender_instance = Recommender(tickers)
+        
+        print("Finding candidates...")
+        candidates = recommender_instance.find_candidates()
+        
+        if not candidates:
+            print("No candidates found after analysis.")
+            return {
+                "type": "recommendation",
+                "recommendations": [],
+                "message": f"產業 '{request.industry}' 中沒有股票符合推薦條件。"
+            }
 
-        # Directly generate recommendations for all stocks in the industry
-        recommendations = generate_recommendations(stocks_in_industry)
-
+        print(f"Found {len(candidates)} candidates. Generating recommendations...")
+        recommendations = recommender_instance.generate_recommendations(candidates)
+        
+        print(f"Returning {len(recommendations)} recommendations.")
         return {
             "type": "recommendation",
-            "mode": "industry",
-            "industry": industry,
             "recommendations": recommendations,
-            "message": f"成功分析「{industry}」產業中的 {len(stocks_in_industry)} 支股票"
+            "message": f"成功為產業 '{request.industry}' 生成 {len(recommendations)} 個推薦。"
         }
     except Exception as e:
-        print(f"自動推薦錯誤: {str(e)}")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"推薦失敗: {str(e)}")
+        print(f"An error occurred: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
