@@ -135,9 +135,7 @@ class Recommender:
         recommendations = []
         print(f"Generating recommendations for {len(candidates)} stocks...")
 
-        # Fetch more detailed data if needed, or use existing data
-        # For this example, we'll re-fetch 10 days of data for simplicity
-        detailed_data = fetch_data(candidates, period="10d", interval="1d")
+        detailed_data = fetch_data(candidates, period="30d", interval="1d")
 
         for ticker in candidates:
             if ticker not in detailed_data:
@@ -145,17 +143,21 @@ class Recommender:
                 continue
 
             df = detailed_data[ticker]
-            if df is None or df.empty:
-                print(f"⚠️  {ticker}: Detailed data is empty")
+            if df is None or df.empty or "Close" not in df.columns:
+                print(f"⚠️  {ticker}: Data empty or missing 'Close'")
                 continue
 
             try:
+                # 確保有技術指標
+                df = add_indicators(df)
+
                 latest_price = float(df['Close'].iloc[-1])
                 recent_data = df.tail(min(10, len(df)))
+
+                # ---- 基本支撐壓力 ----
                 support = float(recent_data['Low'].min())
                 resistance = float(recent_data['High'].max())
                 price_range = resistance - support
-
                 if price_range <= 0:
                     print(f"⚠️  {ticker}: Invalid price range")
                     continue
@@ -163,15 +165,13 @@ class Recommender:
                 entry_low = support
                 entry_high = support + (price_range * 0.4)
                 target_price = resistance - (price_range * 0.1)
-                stop_loss = support - (price_range * 0.15)
-
-                if stop_loss < latest_price * 0.85:
-                    stop_loss = latest_price * 0.95
+                stop_loss = max(support - (price_range * 0.15), latest_price * 0.95)
 
                 potential_gain = target_price - entry_high
                 potential_loss = entry_high - stop_loss
                 risk_reward_ratio = potential_gain / potential_loss if potential_loss > 0 else 0
 
+                # ---- 評級 ----
                 if risk_reward_ratio > 2:
                     rating = "強烈推薦"
                 elif risk_reward_ratio > 1.5:
@@ -181,8 +181,41 @@ class Recommender:
                 else:
                     rating = "不推薦"
 
+                # ---- 股票名稱 ----
                 info = get_ticker_info(ticker)
-                stock_name = info.get('name', ticker) if info else ticker
+                stock_name = info.get("name", ticker) if info else ticker
+
+                # ---- chart_data ----
+                chart_data = []
+                for idx, val in df['Close'].tail(5).items():
+                    try:
+                        if isinstance(idx, pd.Timestamp):
+                            date_str = idx.strftime("%Y-%m-%d")
+                        else:
+                            date_str = str(idx)
+                        if pd.notna(val):
+                            close_val = float(np.array(val).astype(np.float64))
+                            chart_data.append({"date": date_str, "close": close_val})
+                    except Exception as e:
+                        print(f"⚠️ {ticker}: Chart data parse error - {e}")
+                        continue
+
+                # ---- 技術分析信號 ----
+                signals = []
+                if "RSI" in df.columns and pd.notna(df["RSI"].iloc[-1]):
+                    rsi_val = float(df["RSI"].iloc[-1])
+                    if rsi_val > 70:
+                        signals.append("RSI超買，短線可能回調")
+                    elif rsi_val < 30:
+                        signals.append("RSI超賣，可能反彈")
+
+                if "MACD" in df.columns and "MACD_SIGNAL" in df.columns:
+                    macd_val = float(df["MACD"].iloc[-1])
+                    macd_sig = float(df["MACD_SIGNAL"].iloc[-1])
+                    if macd_val > macd_sig:
+                        signals.append("MACD黃金交叉，動能轉強")
+                    else:
+                        signals.append("MACD死亡交叉，動能轉弱")
 
                 recommendation = {
                     "ticker": ticker,
@@ -195,16 +228,19 @@ class Recommender:
                     "support": f"{support:.2f}",
                     "resistance": f"{resistance:.2f}",
                     "rating": rating,
-                    "potential_return": f"{((target_price - entry_high) / entry_high * 100):.1f}%"
+                    "potential_return": f"{((target_price - entry_high) / entry_high * 100):.1f}%",
+                    "chart_data": chart_data,
+                    "ta_signals": signals,
                 }
                 recommendations.append(recommendation)
                 print(f"✅ {ticker}: Recommendation generated ({rating})")
 
             except Exception as e:
                 print(f"❌ {ticker}: Error generating recommendation - {str(e)}")
-                import traceback; traceback.print_exc()
+                import traceback;
+                traceback.print_exc()
                 continue
-        
+
         print(f"Successfully generated {len(recommendations)} recommendations.")
         return recommendations
 

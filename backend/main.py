@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import auto_recommend, manual_recommend, backtest, industries
+from api import auto_recommend, manual_recommend, backtest, industries, insights
 
 app = FastAPI(title="AI Trading Pro API", version="1.0.0")
 
@@ -25,6 +25,7 @@ app.include_router(auto_recommend.router, prefix="/api", tags=["recommendation"]
 app.include_router(manual_recommend.router, prefix="/api", tags=["recommendation"])
 app.include_router(industries.router, prefix="/api", tags=["data"])
 app.include_router(backtest.router, prefix="/api", tags=["backtest"])
+app.include_router(insights.router, prefix="/api", tags=["insights"])
 
 
 @app.get("/")
