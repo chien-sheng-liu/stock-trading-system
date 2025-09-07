@@ -49,6 +49,53 @@ const getRatingClass = (rating) => {
   }
 };
 
+// Helpers for AI summary styling
+const getActionClass = (action) => {
+  switch (action) {
+    case '買進區間': return 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30';
+    case '觀望': return 'bg-amber-500/20 text-amber-300 border border-amber-400/30';
+    case '回避': return 'bg-rose-500/20 text-rose-300 border border-rose-400/30';
+    case '逢高了結': return 'bg-indigo-500/20 text-indigo-300 border border-indigo-400/30';
+    default: return 'bg-gray-600/20 text-gray-300 border border-gray-400/20';
+  }
+};
+
+const Pill = ({ children, className = '' }) => (
+  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${className}`}>{children}</span>
+);
+
+const AiSummary = ({ ai }) => {
+  if (!ai) return null;
+  if (ai.error) {
+    return (
+      <div className="bg-rose-900/20 border border-rose-700/40 rounded-md p-3 text-sm">
+        <div className="flex items-center gap-2 text-rose-300">
+          <span>⚠️</span>
+          <span>AI 錯誤：{String(ai.error)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const summary = ai.summary || ai.text;
+  if (summary) {
+    return (
+      <div className="bg-purple-900/20 border border-purple-700/40 rounded-md p-3">
+        <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+          {summary}
+        </p>
+        <div className="mt-3 text-[11px] text-gray-400">
+          <span className="mr-2">🤖 由 AI 生成</span>
+          {ai.model && <span>模型: {ai.model}</span>}
+        </div>
+      </div>
+    );
+  }
+
+  return <div className="text-sm text-gray-400">AI 建議不可用</div>;
+};
+
+
 
 const RecommendationResults = ({ results }) => {
   const [activeTab, setActiveTab] = useState('recommended');
@@ -223,9 +270,18 @@ const RecommendationResults = ({ results }) => {
         <h4 className="font-bold text-lg text-foreground">{rec.name}</h4>
         <p className="text-sm text-gray-400">{rec.ticker}</p>
       </div>
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRatingClass(rec.rating)}`}>
-        {rec.rating}
-      </span>
+      <div className="flex items-center gap-2">
+        {/* 系統評等 */}
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRatingClass(rec.rating)}`}>
+          系統: {rec.rating}
+        </span>
+        {/* AI 評等（若有） */}
+        {rec.ai_summary?.result?.ai_rating && (
+          <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">
+            AI: {rec.ai_summary.result.ai_rating}
+          </span>
+        )}
+      </div>
     </div>
 
     {/* 指標數據 */}
@@ -262,6 +318,14 @@ const RecommendationResults = ({ results }) => {
         </ul>
       </div>
     )}
+
+    {/* AI 文字建議 */}
+    {rec.ai_summary && (
+      <div className="border-t border-gray-700 pt-3">
+        <p className="text-gray-400 text-sm mb-2">🤖 AI 文字建議</p>
+        <AiSummary ai={rec.ai_summary} />
+      </div>
+    )}
   </div>
 ))}
 
@@ -284,10 +348,81 @@ const RecommendationResults = ({ results }) => {
 export default function Results({ data }) {
   if (!data) return null;
 
+  const AiSingleAnalysis = ({ payload }) => {
+    if (!payload) return null;
+    const ai = payload.ai_insights || {};
+    const ticker = payload.ticker;
+    const summary = payload.summary ?? ai.summary;
+    const model = payload.model ?? ai.model;
+    const error = payload.error ?? ai.error;
+    const qi = payload.insights || null; // quantitative insights
+
+    const fmt = (v, d = 2, suffix = '') => (v === null || v === undefined) ? '—' : `${Number(v).toFixed(d)}${suffix}`;
+    const pct = (v) => (v === null || v === undefined) ? '—' : `${Number(v).toFixed(1)}%`;
+
+    return (
+      <div className="glass-card p-6 rounded-lg space-y-3">
+        <h3 className="text-lg font-semibold text-foreground">AI 推薦</h3>
+        <p className="text-sm text-gray-400">{ticker}</p>
+        {error ? (
+          <div className="bg-rose-900/20 border border-rose-700/40 rounded-md p-3 text-sm text-rose-300">AI 錯誤：{String(error)}</div>
+        ) : (
+          <>
+            {summary && (
+              <div className="rounded-md bg-purple-950/30 border border-purple-700/30 p-3">
+                <p className="text-sm text-foreground leading-relaxed">{summary}</p>
+              </div>
+            )}
+            <div className="text-[11px] text-gray-400">🤖 由 AI 生成 {model ? `（模型: ${model}）` : ''}</div>
+
+            {qi && !qi.error && (
+              <div className="mt-4 space-y-3">
+                <h4 className="text-sm font-semibold text-foreground">量化洞察</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                  <div className="glass-card p-3 rounded">
+                    <div className="text-gray-400">趨勢</div>
+                    <div className="text-foreground mt-1">{qi.trend?.state || '—'}</div>
+                    <div className="text-xs text-gray-400 mt-1">MA5 {fmt(qi.trend?.ma5)} / MA20 {fmt(qi.trend?.ma20)} / MA60 {fmt(qi.trend?.ma60)}</div>
+                  </div>
+                  <div className="glass-card p-3 rounded">
+                    <div className="text-gray-400">動能</div>
+                    <div className="text-foreground mt-1">RSI {fmt(qi.momentum?.rsi)}（{qi.momentum?.rsi_state || '—'}）</div>
+                    <div className="text-xs text-gray-400 mt-1">MACD {fmt(qi.momentum?.macd)} / Signal {fmt(qi.momentum?.macd_signal)}（{qi.momentum?.macd_state || '—'}）</div>
+                  </div>
+                  <div className="glass-card p-3 rounded">
+                    <div className="text-gray-400">波動</div>
+                    <div className="text-foreground mt-1">{qi.volatility?.label || '—'}</div>
+                    <div className="text-xs text-gray-400 mt-1">ATR {fmt(qi.volatility?.atr)}（{pct(qi.volatility?.atr_pct * 100)}）</div>
+                  </div>
+                  <div className="glass-card p-3 rounded">
+                    <div className="text-gray-400">量能</div>
+                    <div className="text-foreground mt-1">{qi.volume?.state || '—'}</div>
+                    <div className="text-xs text-gray-400 mt-1">當日 {fmt(qi.volume?.current, 0)} / 均量20 {fmt(qi.volume?.avg20, 0)}（{fmt(qi.volume?.ratio, 2, 'x')}）</div>
+                  </div>
+                  <div className="glass-card p-3 rounded">
+                    <div className="text-gray-400">支撐 / 壓力</div>
+                    <div className="text-foreground mt-1">{fmt(qi.levels?.support)} / {fmt(qi.levels?.resistance)}</div>
+                    <div className="text-xs text-gray-400 mt-1">距支撐 {pct(qi.levels?.distance_to_support_pct)}，距壓力 {pct(qi.levels?.distance_to_resistance_pct)}</div>
+                  </div>
+                  <div className="glass-card p-3 rounded">
+                    <div className="text-gray-400">表現</div>
+                    <div className="text-foreground mt-1">5日 {pct(qi.performance?.ret_5d_pct)}，20日 {pct(qi.performance?.ret_20d_pct)}，60日 {pct(qi.performance?.ret_60d_pct)}</div>
+                    <div className="text-xs text-gray-400 mt-1">距近高 {pct(qi.range_position?.from_high_pct)}；距近低 {pct(qi.range_position?.from_low_pct)}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="w-full space-y-6">
       {data.type === 'backtest' && renderBacktestResults(data)}
       {data.type === 'recommendation' && <RecommendationResults results={data} />}
+      {data.type === 'ai_recommendation' && <AiSingleAnalysis payload={data} />}
       
     </div>
   );

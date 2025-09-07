@@ -197,7 +197,7 @@ def daytrade_composite_strategy(
 
     # 將分數轉換為 Signal（可視需要調整門檻）
     df['Signal'] = 0
-    df.loc[df['Score'] >= 1.5, 'Signal'] = 1
-    df.loc[df['Score'] <= -1.5, 'Signal'] = -1
+    df.loc[df['Score'] >= 0.5, 'Signal'] = 1
+    df.loc[df['Score'] <= -0.5, 'Signal'] = -1
 
     return df

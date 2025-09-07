@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { apiFetch } from '../lib/api';
 
 export default function BacktestForm({ onResults }) {
   const [ticker, setTicker] = useState('');
@@ -15,7 +16,7 @@ export default function BacktestForm({ onResults }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/backtest', {
+      const response = await apiFetch('/backtest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
