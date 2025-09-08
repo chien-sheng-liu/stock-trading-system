@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import BacktestForm from "@/components/BacktestForm";
 import RecommendationForm from "@/components/RecommendationForm";
 import Results from "@/components/Results";
+import StockAnalysis from "@/components/StockAnalysis";
 
 export default function Home() {
   const [results, setResults] = useState(null);
@@ -21,10 +22,10 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-4 py-8">
           <div className="text-center mb-12">
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-foreground">
-              AI-Powered Trading Assistant
+              台股 AI 推薦與產業選股
             </h1>
             <p className="mt-3 text-lg text-gray-400">
-              專業的台股分析與智能交易建議
+              專業的量化洞察 x 精簡的 AI 文字建議
             </p>
           </div>
 
@@ -39,7 +40,17 @@ export default function Home() {
                       : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
                   }`}
                 >
-                  當沖標的推薦
+                  當沖推薦
+                </button>
+                <button
+                  onClick={() => setActiveTab('stock')}
+                  className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'stock'
+                      ? 'border-indigo-500 text-indigo-400'
+                      : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                  }`}
+                >
+                  股票分析
                 </button>
                 <button
                   onClick={() => setActiveTab('backtest')}
@@ -56,6 +67,7 @@ export default function Home() {
 
             <div className="pt-8">
               {activeTab === 'recommend' && <RecommendationForm onResults={handleResults} />}
+              {activeTab === 'stock' && <StockAnalysis />}
               {activeTab === 'backtest' && <BacktestForm onResults={handleResults} />}
             </div>
           </div>

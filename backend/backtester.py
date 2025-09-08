@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from strategy import ma_crossover_strategy
+from services.strategies.strategy_common import ma_crossover_strategy
 
 
 def run_backtest(data, strategy, strategy_params, initial_capital=100000.0):

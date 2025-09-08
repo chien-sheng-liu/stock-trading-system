@@ -1,7 +1,7 @@
 import yfinance as yf
 import time
 from datetime import datetime, timedelta
-from database import get_stocks_from_db, get_industries_from_db, get_stock_by_ticker, get_stocks_by_tickers
+from core.database import get_stocks_from_db, get_industries_from_db, get_stock_by_ticker, get_stocks_by_tickers
 
 def get_industries():
     """Gets a list of all unique industries from the database."""

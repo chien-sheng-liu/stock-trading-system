@@ -4,7 +4,7 @@ from typing import Dict, Any
 import traceback
 
 from backtester import run_backtest
-from strategy import ma_crossover_strategy
+from services.strategies.strategy_common import ma_crossover_strategy
 from data_fetcher import fetch_data
 
 router = APIRouter()

@@ -159,69 +159,74 @@ export default function RecommendationForm({ onResults }) {
     }
   };
 
+  const ExampleChips = ({ onPick }) => (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {['2330.TW', '2317.TW', '0050.TW'].map((ex) => (
+        <button key={ex} type="button" onClick={() => onPick(ex)} className="px-2 py-1 text-xs rounded bg-secondary hover:bg-secondary/80 text-gray-200 border border-border">
+          {ex}
+        </button>
+      ))}
+    </div>
+  );
+
+  const AiBadge = () => (
+    <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${aiAvailable ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' : 'bg-yellow-500/20 text-yellow-200 border border-yellow-400/30'}`}>
+      {aiAvailable ? 'AI 可用' : 'AI 未啟用'}
+    </div>
+  );
+
   return (
-    <div className="space-y-6">
-      {/* AI 切換 */}
-      {aiAvailable === false && (
-        <div className="bg-yellow-900/40 border border-yellow-700 text-yellow-200 text-sm p-2 rounded">
-          🤖 AI 功能未啟用：請確認伺服器已設定 OPENAI_API_KEY 並安裝 openai 套件。
-          {aiStatus && (
-            <div className="mt-1 text-xs text-yellow-300">
-              SDK: {aiStatus.sdk} ({aiStatus.sdk_version})，模型: {aiStatus.model}
-            </div>
-          )}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* AI 推薦卡片 */}
+      <div className="glass-card p-4 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-md font-semibold text-foreground">AI 推薦（單股）</h3>
+          {aiAvailable !== null && <AiBadge />}
         </div>
-      )}
-
-      {/* 依產業推薦 (Custom Dropdown) */}
-      <div>
-        <h3 className="text-md font-semibold text-foreground mb-2">依產業推薦</h3>
-        <CustomSelect
-          options={industries}
-          value={selectedIndustry}
-          onChange={handleIndustryChange}
-          placeholder="請選擇產業"
-          disabled={loadingIndustry !== ''}
-        />
-        {loadingIndustry && <p className="text-sm text-gray-400 mt-2">分析中: {loadingIndustry}...</p>}
-      </div>
-
-      {/* 分隔線 */}
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center" aria-hidden="true">
-          <div className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center">
-          <span className="bg-background px-2 text-sm text-gray-400">或</span>
-        </div>
-      </div>
-
-      {/* AI 單股推薦 */}
-      <form onSubmit={handleAiAnalyze} className="space-y-4">
-        <div>
-          <label htmlFor="ticker-recommend" className="block text-sm font-medium text-gray-300">
-            輸入特定股票代碼（AI 推薦）
-          </label>
+        <p className="text-xs text-gray-400">輸入台股代碼（純數字會自動補 .TW）。</p>
+        <form onSubmit={handleAiAnalyze} className="mt-3 space-y-3">
           <input
             type="text"
-            id="ticker-recommend"
+            inputMode="text"
+            autoCorrect="off"
+            autoCapitalize="characters"
+            spellCheck={false}
             value={ticker}
-            onChange={(e) => setTicker(e.target.value)}
-            className="mt-1 block w-full bg-secondary border-border rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-            placeholder="例如: 2330, 2317.TW"
+            onChange={(e) => setTicker(e.target.value.toUpperCase())}
+            className="block w-full bg-secondary border border-border rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+            placeholder="例如: 2330 或 2317.TW"
+            aria-label="輸入股票代碼"
           />
-        </div>
-        <div>
+          <ExampleChips onPick={(ex) => setTicker(ex)} />
           <button
             type="submit"
-            disabled={loadingAiSingle || !ticker.trim()}
+            disabled={loadingAiSingle || !ticker.trim() || aiAvailable === false}
             className="w-full py-2 px-4 rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
           >
-            {loadingAiSingle ? 'AI 推薦中...' : 'AI 推薦'}
+            {loadingAiSingle ? 'AI 推薦中...' : '生成 AI 推薦'}
           </button>
+          {aiAvailable === false && (
+            <div className="text-[11px] text-yellow-300">請於後端設定 OPENAI_API_KEY 並安裝 openai 套件。</div>
+          )}
+          {error && <p className="text-sm text-danger">Error: {error}</p>}
+        </form>
+      </div>
+
+      {/* 依產業推薦卡片 */}
+      <div className="glass-card p-4 rounded-lg">
+        <h3 className="text-md font-semibold text-foreground mb-2">依產業推薦</h3>
+        <p className="text-xs text-gray-400">選擇產業即自動產生候選標的與投組洞察。</p>
+        <div className="mt-3">
+          <CustomSelect
+            options={industries}
+            value={selectedIndustry}
+            onChange={handleIndustryChange}
+            placeholder={industries.length ? '請選擇產業' : '載入產業中...'}
+            disabled={loadingIndustry !== '' || !industries.length}
+          />
+          {loadingIndustry && <p className="text-sm text-gray-400 mt-2">分析中：{loadingIndustry}...</p>}
         </div>
-        {error && <p className="mt-2 text-sm text-danger">Error: {error}</p>}
-      </form>
+      </div>
     </div>
   );
 }

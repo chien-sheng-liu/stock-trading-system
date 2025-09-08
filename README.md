@@ -10,6 +10,35 @@ Project structure
 - frontend/ — Next.js 14 app (App Router, Tailwind)
 - backend/ — FastAPI service (uvicorn), data fetching, backtesting, DB access
 
+Backend Layout
+- core/
+  - settings.py — loads `.env`, exposes `get_db_settings()`
+  - database.py — connection pool + helpers (psycopg2)
+- services/
+  - recommendation_service.py — 當沖推薦邏輯（量化洞察 + AI 摘要）
+  - analysis_service.py — AI 單股分析與量化洞察工具
+  - openai_service.py — OpenAI Completions 客戶端封裝
+- api/
+  - auto_recommend.py — 依產業自動推薦（POST `/api/recommend/auto`）
+  - ai_recommend.py — AI 單股推薦（POST `/api/recommend/ai`）
+  - stock_analysis.py — 股票波段/投資分析（POST `/api/stock/analyze`）
+  - backtest.py — 回測（POST `/api/backtest`）
+  - industries.py, config.py — 輔助查詢與設定
+- services/strategies/
+  - strategy_common.py — 指標計算與通用策略（單一真源）
+  - strategy_day.py — 當沖預設參數包裝（MA5/20/60 等）
+  - strategy_stock.py — 波段/投資預設參數包裝（MA20/50/200 等）
+- tools/
+  - fetch_stocks.py, check_industries.py, verify_db.py — DB 工具腳本
+
+Makefile
+- dev: 同時啟動後端/前端（使用 dev.sh）
+- dev-backend: 啟動 FastAPI（uvicorn）
+- dev-frontend: 啟動 Next.js 開發伺服器
+- fetch-stocks: 抓取台股清單並寫入 DB（需先設定 DB）
+- check-industries: 列出各產業的股票數量
+- verify-db: 檢查資料庫連線與 stocks 資料表
+
 Local development
 - Backend
   - cd backend
@@ -40,13 +69,17 @@ One-command dev
   - Start both services: ./dev.sh
   - Stop: Ctrl+C
 
+Housekeeping
+- Clean caches: `make clean` (removes __pycache__ and .DS_Store)
+- See CONTRIBUTING.md for code layout and how to add endpoints/services.
+
 Key endpoints
 - AI 推薦（單股）: POST /api/recommend/ai
   - Body: { "ticker": "2330.TW" }
   - Returns: { type: "ai_recommendation", summary, model, ... }
 - 依產業推薦（自動）: POST /api/recommend/auto
   - Body: { "industry": "半導體" }
-  - Returns: { type: "recommendation", recommendations: [...], insights: {...} }
+  - Returns: { type: "recommendation", recommendations: [...] }
 
 API: AI 推薦 schema
 - Request (POST `/api/recommend/ai`)

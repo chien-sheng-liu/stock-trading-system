@@ -4,7 +4,7 @@ import json
 import os
 
 from data_fetcher import fetch_data
-from strategy import add_indicators
+from services.strategies.strategy_day import add_indicators
 from .openai_service import completion_client
 
 def _to_float(x: Any) -> float | None:

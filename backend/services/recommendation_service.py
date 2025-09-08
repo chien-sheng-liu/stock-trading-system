@@ -6,7 +6,7 @@ from typing import Any, Optional
 from datetime import datetime, timedelta
 
 from data_fetcher import fetch_data, get_ticker_info
-from strategy import add_indicators
+from services.strategies.strategy_day import add_indicators
 from .openai_service import completion_client
 
 class Recommender:
@@ -288,19 +288,7 @@ class Recommender:
                         date_str = idx.strftime("%Y-%m-%d") if isinstance(idx, pd.Timestamp) else str(idx)
                         chart_data.append({"date": date_str, "close": close_val})
 
-                signals = []
-                if "RSI" in df.columns and pd.notna(df["RSI"].iloc[-1]):
-                    rsi_val = float(df["RSI"].iloc[-1])
-                    if rsi_val > 70:
-                        signals.append("RSI超買，短線可能回調")
-                    elif rsi_val < 30:
-                        signals.append("RSI超賣，可能反彈")
-
-                if "MACD" in df.columns and "MACD_SIGNAL" in df.columns:
-                    if df["MACD"].iloc[-1] > df["MACD_SIGNAL"].iloc[-1]:
-                        signals.append("MACD黃金交叉，動能轉強")
-                    else:
-                        signals.append("MACD死亡交叉，動能轉弱")
+                # 移除人工（rule-based）技術訊號，僅使用 AI 與量化洞察
 
                 quant_insights = self._compute_quant_insights(df)
 
@@ -318,7 +306,6 @@ class Recommender:
                     "rating": rating,
                     "potential_return": f"{((target_price - entry_high) / entry_high * 100):.1f}%",
                     "chart_data": chart_data,
-                    "ta_signals": signals,
                     "insights": quant_insights,
                 }
 
@@ -337,7 +324,6 @@ class Recommender:
                             support=support,
                             resistance=resistance,
                             code_rating=rating,
-                            ta_signals=signals,
                             closes=[c.get("close") for c in chart_data],
                             quant_insights=quant_insights,
                         )
@@ -369,7 +355,6 @@ class Recommender:
             support: float,
             resistance: float,
             code_rating: str,
-            ta_signals: list[str],
             closes: list[float] | None = None,
             quant_insights: dict | None = None,
     ):
@@ -390,7 +375,6 @@ class Recommender:
             f"風險報酬比: {risk_reward_ratio:.2f}\n"
             f"支撐: {support:.2f}, 壓力: {resistance:.2f}\n"
             f"系統評等: {code_rating}\n"
-            f"技術指標訊號: {', '.join(ta_signals) if ta_signals else '無'}\n"
         )
         prompt = sys_prompt + "\n" + qi_text + "\n" + user_prompt
 
@@ -467,4 +451,3 @@ class Recommender:
             }
         except Exception as e:
             return {"error": str(e)}
-
