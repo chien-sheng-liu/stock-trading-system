@@ -3,7 +3,7 @@ import os
 import importlib
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import auto_recommend, backtest, industries, ai_recommend, config, stock_analysis
+from api import auto_recommend, backtest, industries, ai_recommend, config, stock_analysis, watchlist, daytrade
 
 app = FastAPI(title="AI Trading Pro API", version="1.0.0")
 
@@ -29,6 +29,8 @@ app.include_router(industries.router, prefix="/api")
 app.include_router(ai_recommend.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(stock_analysis.router, prefix="/api")
+app.include_router(watchlist.router, prefix="/api")
+app.include_router(daytrade.router, prefix="/api")
 
 
 def _detect_openai_sdk():

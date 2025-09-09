@@ -358,13 +358,27 @@ class Recommender:
             closes: list[float] | None = None,
             quant_insights: dict | None = None,
     ):
-        sys_prompt = "你是一個專業的投資分析師，請根據以下數據提供完整的建議："
+        sys_prompt = (
+            "你是專業投資分析師。僅依據提供的數據做文字解讀，"
+            "禁止自行計算或提供保證。請用買方視角輸出 2 句繁體中文："
+            "第 1 句請優先輸出『核心操作建議』（買點/賣點/風控，簡潔）；第 2 句補充觀察重點。"
+        )
         qi_text = ""
         try:
             if quant_insights:
                 qi_text = f"技術指標: {json.dumps(quant_insights, ensure_ascii=False)}"
         except Exception:
             qi_text = ""
+
+        # 核心操作建議（先組成給 AI 參考）
+        try:
+            entry_range_str = f"{entry_low:.2f}~{entry_high:.2f}"
+            ops_text = (
+                f"買點：{entry_range_str}；賣點：{target_price:.2f}／停損：{stop_loss:.2f}。"
+                "靠近買區分批進場，靠近目標分批了結 風控：單筆風險 1%~2%。"
+            )
+        except Exception:
+            ops_text = None
 
         user_prompt = (
             f"股票: {ticker} ({name})\n"
@@ -375,6 +389,7 @@ class Recommender:
             f"風險報酬比: {risk_reward_ratio:.2f}\n"
             f"支撐: {support:.2f}, 壓力: {resistance:.2f}\n"
             f"系統評等: {code_rating}\n"
+            + (f"核心操作建議（請先輸出）：{ops_text}\n" if ops_text else "")
         )
         prompt = sys_prompt + "\n" + qi_text + "\n" + user_prompt
 

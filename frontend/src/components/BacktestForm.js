@@ -1,15 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
+import BacktestResults from './results/BacktestResults';
 import { apiFetch } from '../lib/api';
 
-export default function BacktestForm({ onResults }) {
+export default function BacktestForm() {
   const [ticker, setTicker] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [strategyParams, setStrategyParams] = useState('{}');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [results, setResults] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,7 +30,7 @@ export default function BacktestForm({ onResults }) {
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      onResults(data);
+      setResults(data);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -37,6 +39,7 @@ export default function BacktestForm({ onResults }) {
   };
 
   return (
+    <div className="space-y-6">
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="ticker-backtest" className="block text-sm font-medium text-gray-300">
@@ -110,5 +113,11 @@ export default function BacktestForm({ onResults }) {
       </button>
       {error && <p className="mt-2 text-sm text-danger">Error: {error}</p>}
     </form>
+    {results && (
+      <div className="pt-6 border-t border-border">
+        <BacktestResults results={results} />
+      </div>
+    )}
+    </div>
   );
 }

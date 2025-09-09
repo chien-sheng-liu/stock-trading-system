@@ -30,9 +30,52 @@ const AiSummary = ({ ai }) => {
     );
   }
   const summary = ai.summary || ai.text;
+  const parseOps = (text) => {
+    if (!text || typeof text !== 'string') return null;
+    try {
+      const buyMatch = text.match(/買點[:：]\s*([^；。]+)/);
+      const sellMatch = text.match(/賣點[:：]\s*([^；。\/\n]+)/);
+      const stopMatch = text.match(/停損[:：]\s*([^；。\n]+)/);
+      const riskMatch = text.match(/風控[:：]\s*([^；。\n]+)/);
+      return {
+        buy: buyMatch ? buyMatch[1].trim() : null,
+        sell: sellMatch ? sellMatch[1].trim() : null,
+        stop: stopMatch ? stopMatch[1].trim() : null,
+        risk: riskMatch ? riskMatch[1].trim() : null,
+      };
+    } catch (_) {
+      return null;
+    }
+  };
+  const ops = parseOps(summary);
   if (summary) {
     return (
       <div className="bg-purple-900/20 border border-purple-700/40 rounded-md p-3">
+        {ops && (ops.buy || ops.sell || ops.stop || ops.risk) && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 text-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-gray-300">🟩 買點</span>
+              {ops.buy ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">{ops.buy}</span>
+              ) : (
+                <span className="text-gray-500">—</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-gray-300">🟥 賣點</span>
+              {ops.sell && (<span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">目標 {ops.sell}</span>)}
+              {ops.stop && (<span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-500/20 text-rose-300 border border-rose-400/30">停損 {ops.stop}</span>)}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-gray-300">💡 風控</span>
+              {ops.risk ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary/60 text-foreground border border-border">{ops.risk}</span>
+              ) : (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary/60 text-foreground border border-border">單筆風險 1%~2%</span>
+              )}
+            </div>
+          </div>
+        )}
         <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{summary}</p>
         <div className="mt-3 text-[11px] text-gray-400">
           <span className="mr-2">🤖 由 AI 生成</span>
@@ -99,7 +142,32 @@ export default function AiSingleAnalysis({ payload }) {
                 <div className="glass-card p-3 rounded">
                   <div className="text-gray-400">趨勢</div>
                   <div className="text-foreground mt-1">{qi.trend?.state || '—'}</div>
-                  <div className="text-xs text-gray-400 mt-1">MA5 {fmt(qi.trend?.ma5)} / MA20 {fmt(qi.trend?.ma20)} / MA60 {fmt(qi.trend?.ma60)}</div>
+                  {(() => {
+                    const t = qi.trend || {};
+                    // Prefer medium/long set if available, else short-term set
+                    const hasLong = (t.ma20 != null && t.ma50 != null && t.ma200 != null);
+                    const hasShort = (t.ma5 != null && t.ma20 != null && t.ma60 != null);
+                    if (hasLong) {
+                      return (
+                        <div className="text-xs text-gray-400 mt-1">MA20 {fmt(t.ma20)} / MA50 {fmt(t.ma50)} / MA200 {fmt(t.ma200)}</div>
+                      );
+                    }
+                    if (hasShort) {
+                      return (
+                        <div className="text-xs text-gray-400 mt-1">MA5 {fmt(t.ma5)} / MA20 {fmt(t.ma20)} / MA60 {fmt(t.ma60)}</div>
+                      );
+                    }
+                    // Fallback: show whatever two MAs exist
+                    const parts = [];
+                    if (t.ma5 != null) parts.push(`MA5 ${fmt(t.ma5)}`);
+                    if (t.ma20 != null) parts.push(`MA20 ${fmt(t.ma20)}`);
+                    if (t.ma50 != null) parts.push(`MA50 ${fmt(t.ma50)}`);
+                    if (t.ma60 != null) parts.push(`MA60 ${fmt(t.ma60)}`);
+                    if (t.ma200 != null) parts.push(`MA200 ${fmt(t.ma200)}`);
+                    return parts.length ? (
+                      <div className="text-xs text-gray-400 mt-1">{parts.join(' / ')}</div>
+                    ) : null;
+                  })()}
                 </div>
                 <div className="glass-card p-3 rounded">
                   <div className="text-gray-400">動能</div>
@@ -134,4 +202,3 @@ export default function AiSingleAnalysis({ payload }) {
     </div>
   );
 }
-

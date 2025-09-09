@@ -77,9 +77,15 @@ def create_tables():
         industry VARCHAR(255),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS watchlist (
+        id SERIAL PRIMARY KEY,
+        ticker VARCHAR(20) UNIQUE NOT NULL,
+        note VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
     """
     execute_query(create_table_query)
-    print("[DB] Ensured 'stocks' table exists.")
+    print("[DB] Ensured 'stocks' and 'watchlist' tables exist.")
 
 
 def upsert_stocks(stocks):

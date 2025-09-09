@@ -4,7 +4,7 @@ import json
 import os
 
 from data_fetcher import fetch_data
-from services.strategies.strategy_day import add_indicators
+from services.strategies.strategy_stock import add_indicators
 from .openai_service import completion_client
 
 def _to_float(x: Any) -> float | None:
@@ -29,9 +29,12 @@ def compute_quant_insights(ticker: str) -> Dict[str, Any]:
         last = df.iloc[-1]
 
         close = _to_float(last.get("Close"))
-        ma5 = _to_float(last.get("MA5"))
-        ma20 = _to_float(last.get("MA20"))
-        ma60 = _to_float(last.get("MA60"))
+        # Gather available MAs (supports both short-term and long-term sets)
+        ma5 = _to_float(last.get("MA5")) if "MA5" in df.columns else None
+        ma20 = _to_float(last.get("MA20")) if "MA20" in df.columns else None
+        ma50 = _to_float(last.get("MA50")) if "MA50" in df.columns else None
+        ma60 = _to_float(last.get("MA60")) if "MA60" in df.columns else None
+        ma200 = _to_float(last.get("MA200")) if "MA200" in df.columns else None
         rsi = _to_float(last.get("RSI"))
         atr = _to_float(last.get("ATR"))
         macd = _to_float(last.get("MACD"))
@@ -40,9 +43,16 @@ def compute_quant_insights(ticker: str) -> Dict[str, Any]:
         vol = _to_float(last.get("Volume"))
         avg20 = _to_float(df["Volume"].tail(20).mean()) if len(df) >= 20 else None
 
-        # 趨勢（均線排列）
+        # 趨勢（均線排列）：優先使用 MA20/MA50/MA200，否則退回 MA5/MA20/MA60
         trend = None
-        if all(v is not None for v in [ma5, ma20, ma60]):
+        if all(v is not None for v in [ma20, ma50, ma200]):
+            if ma20 > ma50 > ma200:
+                trend = "多頭排列"
+            elif ma20 < ma50 < ma200:
+                trend = "空頭排列"
+            else:
+                trend = "盤整/糾結"
+        elif all(v is not None for v in [ma5, ma20, ma60]):
             if ma5 > ma20 > ma60:
                 trend = "多頭排列"
             elif ma5 < ma20 < ma60:
@@ -123,9 +133,22 @@ def compute_quant_insights(ticker: str) -> Dict[str, Any]:
                 pos_high = (high - close) / high
                 pos_low = (close - low) / low
 
+        trend_obj: Dict[str, Any] = {"state": trend}
+        # include discovered MA values without forcing a fixed set
+        if ma5 is not None:
+            trend_obj["ma5"] = ma5
+        if ma20 is not None:
+            trend_obj["ma20"] = ma20
+        if ma50 is not None:
+            trend_obj["ma50"] = ma50
+        if ma60 is not None:
+            trend_obj["ma60"] = ma60
+        if ma200 is not None:
+            trend_obj["ma200"] = ma200
+
         return {
             "price": close,
-            "trend": {"ma5": ma5, "ma20": ma20, "ma60": ma60, "state": trend},
+            "trend": trend_obj,
             "momentum": {
                 "rsi": rsi,
                 "rsi_state": rsi_state,

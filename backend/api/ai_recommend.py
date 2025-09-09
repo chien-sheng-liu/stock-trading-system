@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 # Import the new, centralized services
 from services.analysis_service import analyze_with_ai, compute_quant_insights
+from core.database import get_stock_by_ticker
 
 router = APIRouter()
 
@@ -33,9 +34,11 @@ async def recommend_ai(request: TickerRequest):
         # 2) 結構化量化洞察（非 AI） - from analysis_service
         more_insights = compute_quant_insights(ticker)
 
+        info = get_stock_by_ticker(ticker) or {}
         return {
             "type": "ai_recommendation",
             "ticker": ticker,
+            "name": info.get("name"),
             "summary": summary,
             "model": model,
             "details": details,

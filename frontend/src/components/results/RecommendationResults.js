@@ -41,9 +41,53 @@ const AiSummary = ({ ai }) => {
     );
   }
   const summary = ai.summary || ai.text;
+  // Try to extract core ops: 買點 / 賣點 / 停損 / 風控
+  const parseOps = (text) => {
+    if (!text || typeof text !== 'string') return null;
+    try {
+      const buyMatch = text.match(/買點[:：]\s*([^；。]+)/);
+      const sellMatch = text.match(/賣點[:：]\s*([^；。\/\n]+)/);
+      const stopMatch = text.match(/停損[:：]\s*([^；。\n]+)/);
+      const riskMatch = text.match(/風控[:：]\s*([^；。\n]+)/);
+      return {
+        buy: buyMatch ? buyMatch[1].trim() : null,
+        sell: sellMatch ? sellMatch[1].trim() : null,
+        stop: stopMatch ? stopMatch[1].trim() : null,
+        risk: riskMatch ? riskMatch[1].trim() : null,
+      };
+    } catch (_) {
+      return null;
+    }
+  };
+  const ops = parseOps(summary);
   if (summary) {
     return (
       <div className="bg-purple-900/20 border border-purple-700/40 rounded-md p-3">
+        {ops && (ops.buy || ops.sell || ops.stop || ops.risk) && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3 text-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-gray-300">🟩 買點</span>
+              {ops.buy ? (
+                <Pill className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">{ops.buy}</Pill>
+              ) : (
+                <span className="text-gray-500">—</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-gray-300">🟥 賣點</span>
+              {ops.sell && (<Pill className="bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">目標 {ops.sell}</Pill>)}
+              {ops.stop && (<Pill className="bg-rose-500/20 text-rose-300 border border-rose-400/30">停損 {ops.stop}</Pill>)}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-gray-300">💡 風控</span>
+              {ops.risk ? (
+                <Pill className="bg-secondary/60 text-foreground border border-border">{ops.risk}</Pill>
+              ) : (
+                <Pill className="bg-secondary/60 text-foreground border border-border">單筆風險 1%~2%</Pill>
+              )}
+            </div>
+          </div>
+        )}
         <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">{summary}</p>
         <div className="mt-3 text-[11px] text-gray-400">
           <span className="mr-2">🤖 由 AI 生成</span>
@@ -55,7 +99,7 @@ const AiSummary = ({ ai }) => {
   return <div className="text-sm text-gray-400">AI 建議不可用</div>;
 };
 
-export default function RecommendationResults({ results }) {
+export default function RecommendationResults({ results, onAnalyze }) {
   const [activeTab, setActiveTab] = useState('recommended');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -68,6 +112,10 @@ export default function RecommendationResults({ results }) {
   // Sparkline controls
   const [sparkScale, setSparkScale] = useState('price');
   const [showBaseline, setShowBaseline] = useState(true);
+
+  // simple toast (top-level)
+  const [toast, setToast] = useState('');
+  const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(''), 1500); };
 
   // Saved filters
   useEffect(() => {
@@ -272,6 +320,46 @@ export default function RecommendationResults({ results }) {
                       AI: {rec.ai_summary.result.ai_rating}
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await fetch('/api/watchlist', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker: rec.ticker })
+                        });
+                        showToast('已加入自選');
+                      } catch (_) {
+                        showToast('加入失敗');
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded text-xs bg-secondary hover:bg-secondary/80 border border-border text-foreground"
+                    title="加入自選清單"
+                  >加入自選</button>
+                  <button
+                    type="button"
+                    onClick={() => onAnalyze && onAnalyze(rec.ticker)}
+                    className="px-2 py-0.5 rounded text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
+                    title="分析此標的"
+                  >分析</button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/daytrade/analyze', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker: rec.ticker })
+                        });
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        const json = await res.json();
+                        // attach to record for inline view
+                        rec._daytrade = json;
+                        showToast(`即時：${json.decision}`);
+                      } catch (e) {
+                        showToast('即時分析失敗');
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                    title="即時當沖分析（5m）"
+                  >即時</button>
                 </div>
               </div>
 
@@ -305,6 +393,68 @@ export default function RecommendationResults({ results }) {
                 <div><p className="text-gray-400">潛在報酬</p><p className="text-green-400">{rec.potential_return}</p></div>
               </div>
 
+              {/* 核心操作建議（買點｜賣點｜提醒） */}
+              {(() => {
+                // parse entry range like "123.45 - 128.90"
+                const rng = (rec.entry_price_range || '').split('-').map(s => s.trim());
+                const eLow = rng.length === 2 ? rng[0] : null;
+                const eHigh = rng.length === 2 ? rng[1] : null;
+                const tgt = rec.target_profit || null;
+                const stp = rec.stop_loss || null;
+                const trend = rec.insights?.trend?.state || null;
+                const tipText = trend ? `趨勢：${trend}` : null;
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="glass-card p-3 rounded">
+                      <div className="flex items-center gap-2 text-gray-300 text-sm mb-2">🟩 買點</div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {(eLow && eHigh) ? (
+                          <Pill className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">買區 {eLow} ~ {eHigh}</Pill>
+                        ) : (
+                          <span className="text-gray-500">—</span>
+                        )}
+                        <Pill className="bg-secondary/60 text-foreground border border-border">靠近買區分批進場，不追高</Pill>
+                      </div>
+                    </div>
+                    <div className="glass-card p-3 rounded">
+                      <div className="flex items-center gap-2 text-gray-300 text-sm mb-2">🟥 賣點</div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {tgt && (<Pill className="bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">目標 {tgt}</Pill>)}
+                        {stp && (<Pill className="bg-rose-500/20 text-rose-300 border border-rose-400/30">停損 {stp}</Pill>)}
+                        <Pill className="bg-secondary/60 text-foreground border border-border">靠近目標分批了結</Pill>
+                      </div>
+                    </div>
+                    <div className="glass-card p-3 rounded">
+                      <div className="flex items-center gap-2 text-gray-300 text-sm mb-2">💡 提醒</div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {(() => {
+                          const tips = [];
+                          const ins = rec.insights || {};
+                          const vol = ins.volatility || {};
+                          const levels = ins.levels || {};
+                          const mom = ins.momentum || {};
+                          const atrp = typeof vol.atr_pct === 'number' ? vol.atr_pct * 100 : null;
+                          if (tipText) tips.push(tipText);
+                          if (atrp != null) {
+                            if (atrp >= 3.0) tips.push('波動較大，降低部位');
+                            else if (atrp <= 1.0) tips.push('波動較小，部位可酌增');
+                          }
+                          if (mom.rsi_state === '超買') tips.push('RSI 超買，留意短線回檔');
+                          if (mom.rsi_state === '超賣') tips.push('RSI 超賣，反彈可觀望');
+                          if (mom.macd_state === '黃金交叉') tips.push('MACD 轉強，順勢操作');
+                          if (typeof levels.distance_to_resistance_pct === 'number' && levels.distance_to_resistance_pct <= 2.0) tips.push('接近壓力，逢高了結');
+                          if (typeof levels.distance_to_support_pct === 'number' && levels.distance_to_support_pct <= 2.0) tips.push('靠近支撐，逢低分批');
+                          tips.push('單筆風險控制於 1%~2%');
+                          return (tips.slice(0, 3).map((t, i) => (
+                            <Pill key={i} className="bg-secondary/60 text-foreground border border-border">{t}</Pill>
+                          )));
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {rec.chart_data && rec.chart_data.length > 1 && (() => {
                 const data = rec.chart_data;
                 const start = data[0]?.close;
@@ -329,19 +479,26 @@ export default function RecommendationResults({ results }) {
                 );
 
                 const CustomTooltip = ({ active, payload, label }) => {
-                  if (active && payload && payload.length) {
-                    const val = payload[0].value;
-                    const delta = isPct ? val : (start && typeof val === 'number') ? ((val - start) / start) * 100 : 0;
-                    const pos = delta >= 0;
-                    return (
-                      <div className="bg-background/90 border border-border rounded p-2 text-xs">
-                        <div className="text-gray-300">{label}</div>
-                        <div className="text-foreground">{isPct ? '變化' : '收盤'} {Number(val).toFixed(isPct ? 1 : 2)}{isPct ? '%' : ''}</div>
-                        <div className={pos ? 'text-emerald-300' : 'text-rose-300'}>{pos ? '▲' : '▼'} {Math.abs(delta).toFixed(1)}%</div>
+                  if (!active || !payload || payload.length === 0) return null;
+                  const val = payload[0].value;
+                  const delta = isPct
+                    ? val
+                    : (start && typeof val === 'number') ? ((val - start) / start) * 100 : 0;
+                  const pos = typeof delta === 'number' ? delta >= 0 : true;
+                  const fmt = (v) => (typeof v === 'number' ? (isPct ? v.toFixed(2) + '%' : v.toFixed(2)) : '—');
+                  return (
+                    <div className="bg-background/95 border border-border rounded-md shadow-lg p-3 text-xs min-w-[160px]">
+                      <div className="text-gray-300 mb-1">{label}</div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-400">{isPct ? '變化' : '收盤'}</span>
+                        <span className="text-foreground font-medium">{fmt(val)}</span>
                       </div>
-                    );
-                  }
-                  return null;
+                      <div className={`flex items-center justify-between mt-1 ${pos ? 'text-emerald-300' : 'text-rose-300'}`}>
+                        <span>Δ</span>
+                        <span>{pos ? '▲' : '▼'} {typeof delta === 'number' ? Math.abs(delta).toFixed(2) : '—'}%</span>
+                      </div>
+                    </div>
+                  );
                 };
 
                 return (
@@ -361,9 +518,55 @@ export default function RecommendationResults({ results }) {
                         ? `範圍 ${yMin.toFixed(1)}% ~ ${yMax.toFixed(1)}%`
                         : `範圍 ${yMin.toFixed(2)} ~ ${yMax.toFixed(2)}（${(((maxClose - minClose) / start) * 100).toFixed(1)}%）`}
                     </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-gray-300">
+                      <span className="inline-flex items-center gap-1">
+                        <span style={{ backgroundColor: strokeColor }} className="inline-block w-4 h-0.5 rounded" />
+                        {isPct ? '變化線' : '收盤線'}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="inline-block w-4 border-b border-dashed border-slate-400" />
+                        基準線
+                      </span>
+                    </div>
                   </div>
                 );
               })()}
+
+              {/* 即時當沖結果（若有） */}
+              {rec._daytrade && (
+                <div className="border-t border-gray-700 pt-3">
+                  <div className="flex items-center gap-2 text-xs mb-1 flex-wrap">
+                    <span className={
+                      `px-2 py-0.5 rounded-full border ` +
+                      (rec._daytrade.decision === '買進' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                       : rec._daytrade.decision === '回避' ? 'bg-rose-500/20 text-rose-300 border-rose-400/30'
+                       : 'bg-amber-500/20 text-amber-300 border-amber-400/30')
+                    }>
+                      即時：{rec._daytrade.decision}
+                    </span>
+                    {rec._daytrade.interval && (
+                      <span className="px-2 py-0.5 rounded-full border bg-secondary/60 text-foreground">{rec._daytrade.interval}</span>
+                    )}
+                    {rec._daytrade.interval_used && rec._daytrade.interval_used !== rec._daytrade.interval && (
+                      <span className="px-2 py-0.5 rounded-full border bg-amber-500/20 text-amber-300 border-amber-400/30">已改用 {rec._daytrade.interval_used}</span>
+                    )}
+                    {rec._daytrade.data_source && (
+                      <span className={`px-2 py-0.5 rounded-full border ${rec._daytrade.data_source === 'direct' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-400/30' : 'bg-secondary/60 text-foreground'}`}>
+                        來源：{rec._daytrade.data_source === 'direct' ? '直接' : 'DB'}{typeof rec._daytrade.bars === 'number' ? ` · ${rec._daytrade.bars}筆` : ''}
+                      </span>
+                    )}
+                    <span className="text-gray-400">現價</span><span className="text-foreground">{rec._daytrade.now_price?.toFixed ? rec._daytrade.now_price.toFixed(2) : rec._daytrade.now_price}</span>
+                    {rec._daytrade.entry && (<><span className="text-gray-400">買</span><span className="text-foreground">{rec._daytrade.entry?.toFixed ? rec._daytrade.entry.toFixed(2) : rec._daytrade.entry}</span></>)}
+                    {rec._daytrade.target && (<><span className="text-gray-400">目標</span><span className="text-green-300">{rec._daytrade.target?.toFixed ? rec._daytrade.target.toFixed(2) : rec._daytrade.target}</span></>)}
+                    {rec._daytrade.stop && (<><span className="text-gray-400">停損</span><span className="text-rose-300">{rec._daytrade.stop?.toFixed ? rec._daytrade.stop.toFixed(2) : rec._daytrade.stop}</span></>)}
+                  </div>
+                  {rec._daytrade.signals && rec._daytrade.signals.length > 0 && (
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {rec._daytrade.signals.map((s, i)=>(<Pill key={i} className="bg-secondary/60 text-foreground border border-border">{s}</Pill>))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {rec.ai_summary && (
                 <div className="border-t border-gray-700 pt-3">
@@ -386,7 +589,11 @@ export default function RecommendationResults({ results }) {
           <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-4 py-2 bg-secondary rounded-md disabled:opacity-50">下一頁</button>
         </div>
       )}
+      {toast && (
+        <div className="fixed bottom-4 right-4 bg-background/95 border border-border rounded-md shadow-lg px-3 py-2 text-xs text-foreground">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
-

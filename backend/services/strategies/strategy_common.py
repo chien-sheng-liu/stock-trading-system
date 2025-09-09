@@ -99,10 +99,21 @@ def add_indicators(
         if col not in df.columns:
             raise ValueError(f"數據缺少必要列: {col}")
 
-    if 'MA5' in indicators or 'MA20' in indicators or 'MA60' in indicators:
-        df['MA5'] = calculate_ma(df, ma_short)
-        df['MA20'] = calculate_ma(df, ma_mid)
-        df['MA60'] = calculate_ma(df, ma_long)
+    # Moving Averages: generate columns based on indicator names (e.g., MA5, MA20, MA50, MA200)
+    ma_windows = []
+    for ind in indicators:
+        if isinstance(ind, str) and ind.upper().startswith('MA'):
+            num = ind.upper()[2:]
+            if num.isdigit():
+                w = int(num)
+                if w not in ma_windows:
+                    ma_windows.append(w)
+    # Backward-compat: if legacy params provided but no MA indicators specified,
+    # generate the classic trio
+    if not ma_windows and any(k in indicators for k in ('MA5','MA20','MA60')):
+        ma_windows = [ma_short, ma_mid, ma_long]
+    for w in sorted(set(ma_windows)):
+        df[f'MA{w}'] = calculate_ma(df, w)
 
     if 'RSI' in indicators:
         df['RSI'] = calculate_rsi(df, window=rsi_window)
@@ -132,12 +143,17 @@ def add_indicators(
 def ma_crossover_strategy(data, short_window=5, long_window=20):
     """
     與既有回測介面相容的均線交叉策略：Signal ∈ {1, -1}
+    以指定視窗長度生成對應 MA 欄位並比較。
     """
-    df = add_indicators(data, indicators=('MA5','MA20'), ma_short=short_window, ma_mid=long_window, ma_long=max(long_window,60))
-    df = df.copy()
+    sw_col = f'MA{int(short_window)}'
+    lw_col = f'MA{int(long_window)}'
+    df = add_indicators(
+        data,
+        indicators=(sw_col, lw_col)
+    ).copy()
     df['Signal'] = 0
-    df.loc[df['MA5'] > df['MA20'], 'Signal'] = 1
-    df.loc[df['MA5'] < df['MA20'], 'Signal'] = -1
+    df.loc[df[sw_col] > df[lw_col], 'Signal'] = 1
+    df.loc[df[sw_col] < df[lw_col], 'Signal'] = -1
     return df
 
 # -----------------------------
