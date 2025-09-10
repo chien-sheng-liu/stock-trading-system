@@ -302,8 +302,11 @@ export default function RecommendationForm({ onResults, triggerDaytradeTicker, o
               </label>
             </div>)
             }
-            {!daytradeOnly && aiAvailable === false && (
-              <div className="text-[11px] text-yellow-300">請於後端設定 OPENAI_API_KEY 並安裝 openai 套件。</div>
+            {aiAvailable === false && (
+              <div className="mt-2 text-sm text-yellow-300 p-3 bg-yellow-500/10 border border-yellow-400/30 rounded-md">
+                <p className="font-semibold">AI 服務未啟用</p>
+                <p className="text-xs mt-1">請確認後端服務已正確設定 <code className="text-xs bg-black/20 px-1 py-0.5 rounded">OPENAI_API_KEY</code> 環境變數。</p>
+              </div>
             )}
             {error && <p className="text-sm text-danger">Error: {error}</p>}
           </form>

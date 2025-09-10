@@ -90,7 +90,6 @@ def add_indicators(
     """
     df = data.copy()
 
-    # yfinance 有時回傳 MultiIndex 欄位
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
@@ -98,6 +97,17 @@ def add_indicators(
     for col in required:
         if col not in df.columns:
             raise ValueError(f"數據缺少必要列: {col}")
+    # Normalize numeric dtypes to float to avoid Decimal/float ops
+    import pandas as _pd  # type: ignore
+    for col in required:
+        try:
+            df[col] = _pd.to_numeric(df[col], errors='coerce')
+        except Exception:
+            # best-effort: fallback to float conversion elementwise
+            try:
+                df[col] = df[col].apply(lambda x: float(x) if x is not None else None)
+            except Exception:
+                pass
 
     # Moving Averages: generate columns based on indicator names (e.g., MA5, MA20, MA50, MA200)
     ma_windows = []

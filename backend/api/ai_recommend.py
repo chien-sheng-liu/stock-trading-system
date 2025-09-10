@@ -47,4 +47,14 @@ async def recommend_ai(request: TickerRequest):
             "ai_insights": insights_ai,
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {
+            "type": "ai_recommendation",
+            "ticker": request.ticker,
+            "name": (get_stock_by_ticker(request.ticker) or {}).get("name"),
+            "summary": None,
+            "model": None,
+            "details": None,
+            "insights": None,
+            "error": str(e),
+            "ai_insights": {"error": str(e)},
+        }

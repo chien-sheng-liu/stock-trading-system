@@ -6,6 +6,7 @@ import os
 from data_fetcher import fetch_data
 from services.strategies.strategy_stock import add_indicators
 from .openai_service import completion_client
+from core.database import get_stock_by_ticker
 
 def _to_float(x: Any) -> float | None:
     try:
@@ -21,6 +22,10 @@ def compute_quant_insights(ticker: str) -> Dict[str, Any]:
     包含趨勢、動能、波動、量能、支撐/壓力與近/中期表現。
     """
     try:
+        db_stock = get_stock_by_ticker(ticker)
+        if not db_stock:
+            return {"error": f"Ticker {ticker} not found in database."}
+
         df_map = fetch_data([ticker], period="6mo", interval="1d")
         df = df_map.get(ticker)
         if df is None or df.empty:
@@ -179,12 +184,26 @@ def compute_quant_insights(ticker: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 def analyze_with_ai(ticker: str):
+    db_stock = get_stock_by_ticker(ticker)
+    if not db_stock:
+        return {"error": f"Ticker {ticker} not found in database. Please run tools/fetch_stocks.py to update the stock list."}
+
     df = fetch_data([ticker], period="3mo", interval="1d").get(ticker)
     if df is None or df.empty:
-        return {"error": "No data available"}
+        return {"error": "No data available from FinMind API for this ticker."}
 
     df = add_indicators(df)
-    last_rows = df.tail(10).to_dict(orient="records")
+    
+    # Format data as markdown table
+    last_10_rows = df.tail(10)
+    try:
+        md_table = last_10_rows[['Close', 'MA5', 'MA20', 'RSI', 'Volume']].round(2).to_markdown(index=False)
+    except Exception:
+        # Fallback if 'tabulate' is not installed
+        try:
+            md_table = last_10_rows[['Close', 'MA5', 'MA20', 'RSI', 'Volume']].round(2).to_string(index=False)
+        except Exception:
+            md_table = ""
 
     sys_text = (
         "你是一位專業的 FinTech 投資分析師。嚴禁自行計算，僅可根據提供的數據做文字解讀。\n"
@@ -192,10 +211,13 @@ def analyze_with_ai(ticker: str):
         "不要輸出 JSON、條列或程式碼區塊。"
     )
     user_text = (
-        f"股票 {ticker} 最近 10 天的數據:\n{last_rows}\n\n"
+        f"股票 {ticker} 最近 10 天的數據:\n\n{md_table}\n\n"
         "請根據上述資料產出自然語句建議（非 JSON）。"
     )
     prompt = sys_text + "\n\n" + user_text
+    print("--- AI Prompt ---")
+    print(prompt)
+    print("-----------------")
 
     try:
         if not completion_client:
@@ -203,11 +225,19 @@ def analyze_with_ai(ticker: str):
         model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo-instruct")
         response = completion_client(prompt=prompt, model=model, temperature=0.4)
         
-        # Handle both new (object) and legacy (dict) response formats
+        print("--- AI Response ---")
+        print(response)
+        print("-------------------")
+
+        # Handle both object and normalized dict response formats
+        content = None
         try:
-            content = response.choices[0].text
-        except (TypeError, AttributeError):
-            content = response["choices"][0]["text"]
+            content = response.choices[0].text  # type: ignore[attr-defined]
+        except Exception:
+            try:
+                content = response["choices"][0]["text"]  # type: ignore[index]
+            except Exception:
+                content = None
 
         text = str(content).strip()
         if "```" in text:
@@ -234,4 +264,5 @@ def analyze_with_ai(ticker: str):
 
         return {"model": model, "summary": text}
     except Exception as e:
+        print(f"[ERROR] AI analysis failed: {e}")
         return {"error": str(e)}

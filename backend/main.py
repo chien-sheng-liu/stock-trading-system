@@ -1,9 +1,11 @@
+# Restart server
 from fastapi import FastAPI
 import os
 import importlib
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import auto_recommend, backtest, industries, ai_recommend, config, stock_analysis, watchlist, daytrade
+from api import auto_recommend, backtest, industries, ai_recommend, config, stock_analysis, watchlist, daytrade, news, admin, stream
+from services.news_worker import start_news_worker
 
 app = FastAPI(title="AI Trading Pro API", version="1.0.0")
 
@@ -31,6 +33,17 @@ app.include_router(config.router, prefix="/api")
 app.include_router(stock_analysis.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")
 app.include_router(daytrade.router, prefix="/api")
+app.include_router(news.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
+app.include_router(stream.router, prefix="/api")
+
+
+@app.on_event("startup")
+def _start_background_workers():
+    try:
+        start_news_worker()
+    except Exception as e:
+        print(f"[Startup] Failed to start news worker: {e}")
 
 
 def _detect_openai_sdk():

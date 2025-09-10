@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import BacktestForm from "@/components/BacktestForm";
 import DaytradeTabs from "@/components/DaytradeTabs";
 import RealtimeRecommend from "@/components/RealtimeRecommend";
+import NewsTab from "@/components/NewsTab";
 import RecommendationForm from "@/components/RecommendationForm";
 import StockAnalysis from "@/components/StockAnalysis";
 import WatchlistPage from "@/components/WatchlistPage";
@@ -73,6 +74,16 @@ export default function Home() {
                   AI 推薦
                 </button>
                 <button
+                  onClick={() => setActiveTab('news')}
+                  className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'news'
+                      ? 'border-indigo-500 text-indigo-400'
+                      : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                  }`}
+                >
+                  新聞中台
+                </button>
+                <button
                   onClick={() => setActiveTab('stock')}
                   className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
                     activeTab === 'stock'
@@ -112,6 +123,7 @@ export default function Home() {
                   realtime: '依選定產業掃描即時候選清單，排序顯示入場訊號與關鍵水位。',
                   ai: '以日線量化摘要，由 AI 產生簡潔的操作建議與亮點整理。',
                   stock: '波段/投資視角：計算買點/賣點/停損與風險報酬，並支援依產業批次分析。',
+                  news: '抓取新聞、入庫、AI 生成操作建議，集中管理事件與情緒。',
                   watch: '管理與快速存取自選代碼，支援即時分析與備註維護。',
                   backtest: '對歷史資料套用策略參數，檢視績效曲線與交易統計指標。',
                 };
@@ -127,6 +139,7 @@ export default function Home() {
               {activeTab === 'realtime' && <RealtimeRecommend />}
               {activeTab === 'ai' && <RecommendationForm mode="single" aiOnly={true} />}
               {activeTab === 'stock' && <StockAnalysis initialTicker={stockTicker} onOpenDaytrade={openDaytradeAnalysis} />}
+              {activeTab === 'news' && <NewsTab />}
               {activeTab === 'watch' && <WatchlistPage onAnalyze={openStockAnalysis} />}
             {activeTab === 'backtest' && <BacktestForm />}
           </div>
