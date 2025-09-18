@@ -156,6 +156,7 @@ export default function RecommendationForm({ onResults, triggerDaytradeTicker, o
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
+      console.log('AI results:', data);
       setResults(data);
       if (onResults) onResults(data);
     } catch (e) {

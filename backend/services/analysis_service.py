@@ -22,15 +22,51 @@ def compute_quant_insights(ticker: str) -> Dict[str, Any]:
     包含趨勢、動能、波動、量能、支撐/壓力與近/中期表現。
     """
     try:
-        db_stock = get_stock_by_ticker(ticker)
-        if not db_stock:
-            return {"error": f"Ticker {ticker} not found in database."}
+        # DB presence is optional; proceed even if not found (fetch direct from provider).
+        _ = get_stock_by_ticker(ticker)
 
-        df_map = fetch_data([ticker], period="6mo", interval="1d")
+        # Fetch a longer history so MA200 and 60d stats are meaningful
+        df_map = fetch_data([ticker], period="12mo", interval="1d")
         df = df_map.get(ticker)
+        # Fallback: build daily bars from intraday (5m) if daily unavailable
+        if df is None or df.empty:
+            try:
+                from datetime import datetime, timedelta, timezone
+                tz = timezone(timedelta(hours=8))
+                # Ensure enough daily points for RSI(14)與均量20：抓約 35 天分K
+                start_dt = datetime.now(tz) - timedelta(days=35)
+                start_time = start_dt.strftime("%Y-%m-%d %H:%M")
+                from providers.yahoo_finance_client import fetch_bars_yahoo
+                minute_map = fetch_bars_yahoo([ticker], interval="5m", period='30d') or {}
+                mdf = minute_map.get(ticker)
+                if mdf is not None and not mdf.empty and all(c in mdf.columns for c in ["Open","High","Low","Close","Volume"]):
+                    # Resample to daily OHLCV
+                    agg = {
+                        'Open': 'first',
+                        'High': 'max',
+                        'Low': 'min',
+                        'Close': 'last',
+                        'Volume': 'sum',
+                    }
+                    try:
+                        daily = mdf.resample('1D').apply(agg).dropna(how='any')
+                    except Exception:
+                        daily = None
+                    if daily is not None and not daily.empty:
+                        df = daily
+            except Exception:
+                pass
         if df is None or df.empty:
             return {"error": "no_data"}
-        df = add_indicators(df)
+        # Compute both short- and long-horizon MAs to support flexible trend logic
+        df = add_indicators(
+            df,
+            indicators=(
+                'MA5','MA20','MA60',  # short set
+                'MA50','MA200',       # longer set
+                'RSI','ATR','BBANDS','MACD','VWAP','VolumeSpike'
+            )
+        )
         last = df.iloc[-1]
 
         close = _to_float(last.get("Close"))
@@ -184,26 +220,50 @@ def compute_quant_insights(ticker: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 def analyze_with_ai(ticker: str):
-    db_stock = get_stock_by_ticker(ticker)
-    if not db_stock:
-        return {"error": f"Ticker {ticker} not found in database. Please run tools/fetch_stocks.py to update the stock list."}
+    # DB lookup is best-effort only; do not block if missing.
+    try:
+        _ = get_stock_by_ticker(ticker)
+    except Exception:
+        _ = None
 
-    df = fetch_data([ticker], period="3mo", interval="1d").get(ticker)
+    # Fetch enough history to compute MA50/200 and RSI14 reliably for AI context
+    df = fetch_data([ticker], period="6mo", interval="1d").get(ticker)
     if df is None or df.empty:
-        return {"error": "No data available from FinMind API for this ticker."}
+        return {"error": "No data available from provider for this ticker."}
 
     df = add_indicators(df)
     
-    # Format data as markdown table
+    # Format data as markdown table (choose available columns dynamically)
     last_10_rows = df.tail(10)
-    try:
-        md_table = last_10_rows[['Close', 'MA5', 'MA20', 'RSI', 'Volume']].round(2).to_markdown(index=False)
-    except Exception:
-        # Fallback if 'tabulate' is not installed
-        try:
-            md_table = last_10_rows[['Close', 'MA5', 'MA20', 'RSI', 'Volume']].round(2).to_string(index=False)
-        except Exception:
-            md_table = ""
+    cols_pref_sets = [
+        ['Close', 'MA20', 'MA50', 'MA200', 'RSI', 'Volume'],
+        ['Close', 'MA5', 'MA20', 'MA60', 'RSI', 'Volume'],
+        ['Close', 'MA20', 'RSI', 'Volume'],
+        ['Close', 'RSI', 'MACD', 'MACD_SIGNAL', 'Volume'],
+        ['Close', 'RSI', 'Volume'],
+    ]
+    md_table = ""
+    for cols in cols_pref_sets:
+        available = [c for c in cols if c in last_10_rows.columns]
+        # ensure at least Close + one indicator present, and avoid all-NaN columns
+        if 'Close' in available and len(available) >= 3:
+            try:
+                df_try = last_10_rows[available].copy()
+                # Drop columns that are entirely NaN over the last 10 rows
+                nun = df_try.notna().sum()
+                keep = [c for c in df_try.columns if (nun.get(c, 0) >= 3 or c in ('Close','Volume'))]
+                df_try = df_try[keep]
+                if df_try.shape[1] < 3:
+                    raise ValueError('too few columns after NaN pruning')
+                md_table = df_try.round(2).to_markdown(index=False)
+                break
+            except Exception:
+                try:
+                    md_table = df_try.round(2).to_string(index=False)
+                    break
+                except Exception:
+                    md_table = ""
+                    continue
 
     sys_text = (
         "你是一位專業的 FinTech 投資分析師。嚴禁自行計算，僅可根據提供的數據做文字解讀。\n"

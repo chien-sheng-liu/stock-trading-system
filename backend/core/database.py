@@ -94,6 +94,20 @@ def create_tables():
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (ticker, date)
     );
+    -- Optional intraday storage for minute bars
+    CREATE TABLE IF NOT EXISTS stock_prices_intraday (
+        id SERIAL PRIMARY KEY,
+        ticker VARCHAR(20) NOT NULL,
+        ts TIMESTAMPTZ NOT NULL,
+        interval VARCHAR(10) NOT NULL,
+        open NUMERIC(10, 4),
+        high NUMERIC(10, 4),
+        low NUMERIC(10, 4),
+        close NUMERIC(10, 4),
+        volume BIGINT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (ticker, ts, interval)
+    );
     CREATE TABLE IF NOT EXISTS watchlist (
         id SERIAL PRIMARY KEY,
         ticker VARCHAR(20) UNIQUE NOT NULL,
@@ -150,6 +164,7 @@ def create_tables():
         print(f"[DB] Backfill industry on news failed: {e}")
     print("[DB] Ensured 'stocks' and 'watchlist' tables exist.")
     print("[DB] Ensured 'news' table and indexes exist.")
+    print("[DB] Ensured 'stock_prices' (daily) and 'stock_prices_intraday' tables exist.")
 
 
 def upsert_stocks(stocks):
@@ -232,6 +247,88 @@ def upsert_stock_prices(ticker, prices_df):
     finally:
         if conn:
             db_pool.putconn(conn)
+
+def upsert_stock_prices_intraday(ticker: str, df, interval: str):
+    """Insert or update intraday minute bars for a stock.
+    Expects DataFrame with DateTimeIndex and columns Open,High,Low,Close,Volume.
+    """
+    if df is None or getattr(df, 'empty', True) or not db_pool:
+        return
+    import pandas as pd  # type: ignore
+    try:
+        cols = {c.lower(): c for c in df.columns}
+        need = [cols.get('open'), cols.get('high'), cols.get('low'), cols.get('close'), cols.get('volume')]
+        if any(x is None for x in need):
+            return
+    except Exception:
+        return
+
+    q = """
+    INSERT INTO stock_prices_intraday (ticker, ts, interval, open, high, low, close, volume, updated_at)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+    ON CONFLICT (ticker, ts, interval) DO UPDATE SET
+        open = EXCLUDED.open,
+        high = EXCLUDED.high,
+        low = EXCLUDED.low,
+        close = EXCLUDED.close,
+        volume = EXCLUDED.volume,
+        updated_at = CURRENT_TIMESTAMP;
+    """
+    records = []
+    try:
+        for idx, row in df.iterrows():
+            try:
+                ts = idx.to_pydatetime() if hasattr(idx, 'to_pydatetime') else idx
+            except Exception:
+                ts = idx
+            records.append((
+                ticker,
+                ts,
+                interval,
+                float(row['Open']),
+                float(row['High']),
+                float(row['Low']),
+                float(row['Close']),
+                int(row['Volume'] if row.get('Volume') is not None else 0),
+            ))
+    except Exception:
+        return
+
+    conn = None
+    try:
+        conn = db_pool.getconn()
+        with conn.cursor() as cur:
+            cur.executemany(q, records)
+            conn.commit()
+    except Exception as e:
+        print(f"[DB] Upsert intraday failed for {ticker}@{interval}: {e}")
+    finally:
+        if conn:
+            db_pool.putconn(conn)
+
+def get_stock_prices_intraday_from_db(ticker: str, interval: str = "5m", max_bars: int = 600):
+    """Fetch recent intraday bars from the database for a ticker and interval.
+    Returns a pandas DataFrame indexed by timestamp with columns Open,High,Low,Close,Volume.
+    """
+    if not db_pool:
+        return None
+    q = (
+        "SELECT ts, open, high, low, close, volume "
+        "FROM stock_prices_intraday "
+        "WHERE ticker = %s AND interval = %s "
+        "ORDER BY ts DESC LIMIT %s;"
+    )
+    rows = execute_query(q, (ticker, interval, max(1, int(max_bars))), fetch="all")
+    if not rows:
+        return None
+    try:
+        import pandas as pd  # type: ignore
+        df = pd.DataFrame(rows, columns=["ts","Open","High","Low","Close","Volume"]).copy()
+        df["ts"] = pd.to_datetime(df["ts"])  # keep tz if present
+        df = df.set_index("ts").sort_index()
+        return df
+    except Exception:
+        return None
 
 def get_stock_prices_from_db(ticker: str, start_date: str, end_date: str):
     """Fetch historical price data from the database."""

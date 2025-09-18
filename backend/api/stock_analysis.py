@@ -50,7 +50,18 @@ def _to_float(x: Any) -> Optional[float]:
         return None
 
 
+def _normalize_ticker(t: str) -> str:
+    try:
+        s = (t or "").strip().upper()
+        if s.isdigit() and not s.endswith('.TW'):
+            return f"{s}.TW"
+        return s
+    except Exception:
+        return t
+
+
 def _fetch_df(ticker: str):
+    ticker = _normalize_ticker(ticker)
     data_map = fetch_data([ticker], period="1y", interval="1d")
     df = data_map.get(ticker)
     if df is None or df.empty or "Close" not in df.columns:

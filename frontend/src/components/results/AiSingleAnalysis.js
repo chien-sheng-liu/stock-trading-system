@@ -96,8 +96,14 @@ export default function AiSingleAnalysis({ payload }) {
   const error = payload.error ?? ai.error;
   const qi = payload.insights || null;
 
-  const fmt = (v, d = 2, suffix = '') => (v === null || v === undefined) ? '—' : `${Number(v).toFixed(d)}${suffix}`;
-  const pct = (v) => (v === null || v === undefined) ? '—' : `${Number(v).toFixed(1)}%`;
+  const fmt = (v, d = 2, suffix = '') => {
+    const num = Number(v);
+    return (v === null || v === undefined || !Number.isFinite(num)) ? '—' : `${num.toFixed(d)}${suffix}`;
+  };
+  const pct = (v) => {
+    const num = Number(v);
+    return (v === null || v === undefined || !Number.isFinite(num)) ? '—' : `${num.toFixed(1)}%`;
+  };
 
   return (
     <div className="glass-card p-6 rounded-lg space-y-3">

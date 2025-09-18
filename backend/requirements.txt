@@ -8,3 +8,4 @@ psycopg2-binary
 python-dotenv>=1.0
 # Pin OpenAI SDK to a stable 1.x API (uses OpenAI().chat.completions)
 openai>=1.30,<2.0
+yfinance>=0.2.40

@@ -31,6 +31,8 @@ Backend Layout
 - tools/
   - fetch_stocks.py, check_industries.py, verify_db.py — DB 工具腳本
 
+For a current, file-by-file status (active vs optional vs legacy), see: `backend/CODEMAP.md`.
+
 Makefile
 - dev: 同時啟動後端/前端（使用 dev.sh）
 - dev-backend: 啟動 FastAPI（uvicorn）

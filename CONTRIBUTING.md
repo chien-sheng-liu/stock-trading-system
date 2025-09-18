@@ -21,8 +21,7 @@ Working with strategies
 - Keep indicator math in strategy_common, keep only defaults/wrappers in the scenario files
 
 Note on deprecation
-- backend/strategy.py is kept only as a compatibility shim and emits a DeprecationWarning.
-- New code should import from services/strategies/* exclusively.
+- Deprecated shim backend/strategy.py has been removed. Import from services/strategies/* exclusively.
 
 Environment and secrets
 - Copy backend/.env.example to backend/.env and fill required keys

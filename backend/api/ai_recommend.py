@@ -15,7 +15,13 @@ async def recommend_ai(request: TickerRequest):
     """
     AI 推薦 API（單一股票）
     """
-    ticker = request.ticker
+    ticker = (request.ticker or "").strip().upper()
+    # Normalize: if pure digits and no suffix, assume TW
+    try:
+        if ticker and ticker.isdigit() and not ticker.endswith('.TW'):
+            ticker = f"{ticker}.TW"
+    except Exception:
+        pass
     try:
         # 1) AI 文字建議 - from analysis_service
         insights_ai = analyze_with_ai(ticker)
@@ -38,7 +44,7 @@ async def recommend_ai(request: TickerRequest):
         return {
             "type": "ai_recommendation",
             "ticker": ticker,
-            "name": info.get("name"),
+            "name": info.get("name") if isinstance(info, dict) else None,
             "summary": summary,
             "model": model,
             "details": details,
